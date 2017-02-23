@@ -266,7 +266,15 @@ public class Path implements Iterable<String>, Comparable<Path>, Serializable {
      * @return The <code>File</code> object.
      */
     public File toFile(File root) {
-        throw new UnsupportedOperationException("not implemented");
+
+        if(root == null) {
+            // Create file with current path's filename
+            return new File(this.fullFileName);
+        }
+        else {
+            // Create file by using File root as root and append it with current path's filename
+            return new File(root, this.fullFileName);
+        }
     }
 
     /**
@@ -322,12 +330,9 @@ public class Path implements Iterable<String>, Comparable<Path>, Serializable {
      */
     @Override
     public boolean equals(Object other) {
-//        System.out.println("This: "+this.fullFileName);
 
         Path temp = (Path) other;
-//        System.out.println("Other: "+temp.fullFileName);
         return this.fullFileName.equals(temp.fullFileName);
-//        throw new UnsupportedOperationException("not implemented");
     }
 
     /**
@@ -336,7 +341,6 @@ public class Path implements Iterable<String>, Comparable<Path>, Serializable {
     @Override
     public int hashCode() {
         return fullFileName.hashCode();
-//        throw new UnsupportedOperationException("not implemented");
     }
 
     /**
