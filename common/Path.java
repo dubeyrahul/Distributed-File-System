@@ -61,7 +61,7 @@ public class Path implements Iterable<String>, Comparable<Path>, Serializable {
         else{
             this.fullFileName = path.fullFileName +"/"+ component;
         }
-        System.out.println("C2: "+this.fullFileName);
+//        System.out.println("C2: "+this.fullFileName);
 
 
 //        throw new UnsupportedOperationException("not implemented");
@@ -164,7 +164,7 @@ public class Path implements Iterable<String>, Comparable<Path>, Serializable {
         listHelper(directory, fileArray, pathArray, "/");
         Path[] result = pathArray.toArray(new Path[pathArray.size()]);
         for(Path p: result) {
-            System.out.println("Path: "+p.toString());
+//            System.out.println("Path: "+p.toString());
         }
         return result;
 
@@ -218,8 +218,8 @@ public class Path implements Iterable<String>, Comparable<Path>, Serializable {
                 }
                 p.components.add(this.components.get(i));
             }
-            System.out.println("Parent: "+p.fullFileName);
-            System.out.println("This:" +this.fullFileName);
+//            System.out.println("Parent: "+p.fullFileName);
+//            System.out.println("This:" +this.fullFileName);
         }
         return p;
     }
