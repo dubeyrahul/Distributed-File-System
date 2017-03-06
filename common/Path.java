@@ -22,7 +22,7 @@ import java.util.*;
  */
 public class Path implements Iterable<String>, Comparable<Path>, Serializable {
 
-    ArrayList<String> components = new ArrayList<String>();
+    public ArrayList<String> components = new ArrayList<String>();
     String fullFileName;
 
     /**
@@ -218,8 +218,6 @@ public class Path implements Iterable<String>, Comparable<Path>, Serializable {
                 }
                 p.components.add(this.components.get(i));
             }
-//            System.out.println("Parent: "+p.fullFileName);
-//            System.out.println("This:" +this.fullFileName);
         }
         return p;
     }
