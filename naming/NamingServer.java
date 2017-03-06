@@ -47,6 +47,8 @@ public class NamingServer implements Service, Registration
     // When client requests for a Storage object
     ConcurrentHashMap<Path, StorageStubs> pathToStorage = new ConcurrentHashMap<Path, StorageStubs>();
 
+    HashSet<Path> directoriesPath;
+    HashSet<Path> filesPath;
 
     // To compare duplicate registration
 //    HashSet<Storage> storageSet = new HashSet<Storage>();
@@ -106,6 +108,10 @@ public class NamingServer implements Service, Registration
 
         registrationSubSkeleton = new SubSkeleton<Registration>(Registration.class, this, this,
                 new InetSocketAddress(NamingStubs.REGISTRATION_PORT));
+
+        directoriesPath = new HashSet<Path>();
+        directoriesPath.add(new Path());
+        filesPath = new HashSet<Path>();
     }
 
     /** Starts the naming server.
@@ -176,46 +182,15 @@ public class NamingServer implements Service, Registration
         if(path.isRoot()){
             return true;
         }
-        String searchString = path.toString();
-//        System.out.println("Naming server has: ");
-        for(Path p: pathToStorage.keySet()) {
-            String pathString = p.toString();
-//            System.out.println("Path in server: "+pathString);
+        // Need to lock path here
+
+        if(directoriesPath.contains(path)){
+            return true;
+        }
+        else if(filesPath.contains(path)){
+            return false;
         }
 
-//        System.out.println("Search String:" +searchString);
-        // Special case
-        if(searchString.equals("/another_file")) {
-//            System.out.println("Throwing exception for another_file");
-            throw new FileNotFoundException("non-existent");
-        }
-
-
-        String[] searchArr = searchString.split("/");
-
-        for(Path p: pathToStorage.keySet()) {
-            boolean match_check = true;
-            String pathString = p.toString();
-//            System.out.println("Path String: "+pathString);
-            String[] pathSplit = pathString.split("/");
-            int j=0;
-            if(searchArr.length > pathSplit.length)
-                continue;
-            for(; j<searchArr.length ; j++) {
-//                System.out.println(j + " " + searchArr[j] + " " + pathSplit[j] + " " + pathSplit[j].equals(searchArr[j]));
-                if(!pathSplit[j].equals(searchArr[j])){
-                    match_check = false;
-                }
-            }
-//            System.out.println("match check " + match_check);
-            if(j == pathSplit.length && match_check == true){
-                return false;
-            }
-            else if(j < pathSplit.length && match_check == true)
-            {
-                return true;
-            }
-        }
         throw new FileNotFoundException("non-existent");
 
     }
@@ -277,20 +252,24 @@ public class NamingServer implements Service, Registration
         if(file.isRoot()){
             return false;
         }
-        if(isDirectory(file) == true || isDirectory(file)==false){
+        if(directoriesPath.contains(file) || filesPath.contains(file)){
             return false;
         }
-        Path parentDirectory = file.parent();
-        if(isDirectory(parentDirectory) == true){
-            File dirFile = new File(file.toString());
-            try {
-                return dirFile.createNewFile();
-            }
-            catch(IOException e){
-                e.printStackTrace();
-            }
+        if(directoriesPath.contains(file.parent()) == false) {
+            throw new FileNotFoundException("Parent directory non-existent");
         }
-        return false;
+
+        try {
+            int storageIndex = new Random().nextInt(storageServerStubsList.size());
+            StorageStubs targetStorage = storageServerStubsList.get(storageIndex);
+            targetStorage.command.create(file);
+            filesPath.add(file);
+        }
+        catch(RMIException e) {
+            throw new RMIException("RMI error while creating file");
+        }
+        return true;
+
     }
 
     @Override
@@ -301,37 +280,17 @@ public class NamingServer implements Service, Registration
         if(directory.isRoot()) {
             return false;
         }
-        Path parentDirectory = directory.parent();
-        System.out.println("Method: createDirectory"+" Path: "+directory.toString()+" Parent path: "+parentDirectory.toString());
-        System.out.println("Is parent a dir: "+isDirectory(parentDirectory));
+        if(directoriesPath.contains(directory) || filesPath.contains(directory)){
+            return false;
+        }
+        if(directoriesPath.contains(directory.parent()) == false){
+            throw new FileNotFoundException("Parent does not exist");
+        }
 
-//        System.out.println(isDirectory(parentDirectory) +" Parent "+parentDirectory.toString());
-        if(isDirectory(parentDirectory) == false){
-//            return false;
-            throw new FileNotFoundException("Parent is a file, not a dir");
-        }
-        else {
-            String[] children = list(parentDirectory);
-            String[] currentDir = directory.toString().split("/");
-            String currentChild = currentDir[currentDir.length-1];
-            for(String s: children){
-                if (s.equals(currentChild)){
-                    return false;
-                }
-            }
-        }
-        // Creating the directory with the same storage stubs as the parent
-        StorageStubs parentStubs = pathToStorage.get(parentDirectory);
-        System.out.println("printing paths in pathToStorage map");
-        for(Path p: pathToStorage.keySet()){
-            System.out.println("Path in map: "+p.toString());
-        }
-        if(parentStubs == null){
-            System.out.println("parentstubs is null");
-        }
-//        System.out.println("Parent stubs found: "+parentStubs.hashCode());
-        pathToStorage.put(directory, new StorageStubs());
+        // locking and unlocking needed
+        directoriesPath.add(directory);
         return true;
+
     }
 
     @Override
@@ -345,7 +304,7 @@ public class NamingServer implements Service, Registration
     {
 
         if(file==null){
-            throw new FileNotFoundException("Path is invalid");
+            throw new NullPointerException("Path is invalid");
         }
 
         if(pathToStorage.get(file)== null){
@@ -412,13 +371,43 @@ public class NamingServer implements Service, Registration
             }
 
             if(hashFlag) {
-                pathToStorage.put(path,storageStubs);
+                for(Path f : files)
+                {
+                    if(!f.isRoot())
+                    {
+                        if(filesPath.contains(f)||directoriesPath.contains(f))
+                        {
+                            toDelete.add(f);
+                        }
+                        else
+                        {
+
+                            Iterator<String> i = f.iterator();
+                            Path p=new Path();
+                            while(i.hasNext())
+                            {
+                                String n=i.next();
+                                if(i.hasNext())
+                                {
+                                    Path d=new Path(p,n);
+                                    p=d;
+                                    directoriesPath.add(d);
+//                                    pathLocks.put(d, new PathLock());
+                                }
+                            }
+                            filesPath.add(f);
+//                            pathLocks.put(f, new PathLock());
+                            pathToStorage.put(f,storageStubs);
+                        }
+                    }
+                }
+
             }
 
-            else {
-//                System.out.println("Added to delete: " + path.toString());
-                toDelete.add(path);
-            }
+//            else {
+////                System.out.println("Added to delete: " + path.toString());
+//                toDelete.add(path);
+//            }
 
         }
         Path[] pathArray = toDelete.toArray(new Path[toDelete.size()]);
