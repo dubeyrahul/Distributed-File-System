@@ -6,6 +6,7 @@ import java.net.*;
 import common.*;
 import rmi.*;
 import naming.*;
+import java.util.*;
 
 /** Storage server.
 
@@ -136,7 +137,31 @@ public class StorageServer implements Storage, Command
         Storage stubOfStorage = Stub.create(Storage.class, storageSubSkeleton, hostname);
         Command stubOfCommand = Stub.create(Command.class, commandSubSkeleton, hostname);
 
+        //Register
+        Path[] pathToDelete = naming_server.register(stubOfStorage, stubOfCommand, Path.list(root));
+        for(Path p: pathToDelete){
+            delete(p);
+        }
+        removeEmptyDirectories(root);
     }
+    private void removeEmptyDirectories(File directory) {
+
+        if (directory.isDirectory()) {
+            if(directory.list().length > 0) {
+                File[] dirArr = directory.listFiles();
+//                System.out.println("dirArr length: "+dirArr.length);
+                for (File dir : dirArr) {
+                    removeEmptyDirectories(dir);
+                }
+            }
+            if (directory.list().length == 0) {
+//                System.out.println("Deleting: "+directory.toString());
+                directory.delete();
+            }
+        }
+    }
+
+
 
     /** Stops the storage server.
 
@@ -250,7 +275,7 @@ public class StorageServer implements Storage, Command
         Path parentPath = file.parent();
         File parentFile = parentPath.toFile(root);
 
-        parentFile.mkdir();
+        parentFile.mkdirs();
         // Creating file by appending it to root
         File tempFile = file.toFile(root);
 
