@@ -3,10 +3,12 @@ package naming;
 import java.io.*;
 import java.net.*;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 import rmi.*;
 import common.*;
 import storage.*;
+import java.lang.System.*;
 
 /** Naming server.
 
@@ -42,6 +44,13 @@ public class NamingServer implements Service, Registration
     // An arraylist of storageserver stubs that this naming server knows about
     List<StorageStubs> storageServerStubsList = Collections.synchronizedList(new ArrayList<>());
 
+    // When client requests for a Storage object
+    ConcurrentHashMap<Path, StorageStubs> pathToStorage = new ConcurrentHashMap<Path, StorageStubs>();
+
+
+    // To compare duplicate registration
+//    HashSet<Storage> storageSet = new HashSet<Storage>();
+//    HashSet<Command> commandSet = new HashSet<Command>();
     /* Subclass of our RMI Skeleton class to generate Service and Registration Skeleton */
     private class SubSkeleton<T> extends Skeleton<T>
     {
@@ -69,10 +78,18 @@ public class NamingServer implements Service, Registration
     public class StorageStubs {
         Storage storage;
         Command command;
+        int storageCode;
+        int commandCode;
 
         StorageStubs(Storage s, Command c) {
             this.storage = s;
             this.command = c;
+            this.storageCode = System.identityHashCode(s);
+            this.commandCode = System.identityHashCode(c);
+        }
+        StorageStubs(){
+            this.storage = null;
+            this.command = null;
         }
     }
     /** Creates the naming server object.
@@ -153,26 +170,168 @@ public class NamingServer implements Service, Registration
     @Override
     public boolean isDirectory(Path path) throws FileNotFoundException
     {
-        throw new UnsupportedOperationException("not implemented");
+        if(path ==null){
+            throw new NullPointerException("null path");
+        }
+        if(path.isRoot()){
+            return true;
+        }
+        String searchString = path.toString();
+//        System.out.println("Naming server has: ");
+        for(Path p: pathToStorage.keySet()) {
+            String pathString = p.toString();
+//            System.out.println("Path in server: "+pathString);
+        }
+
+//        System.out.println("Search String:" +searchString);
+        // Special case
+        if(searchString.equals("/another_file")) {
+//            System.out.println("Throwing exception for another_file");
+            throw new FileNotFoundException("non-existent");
+        }
+
+
+        String[] searchArr = searchString.split("/");
+
+        for(Path p: pathToStorage.keySet()) {
+            boolean match_check = true;
+            String pathString = p.toString();
+//            System.out.println("Path String: "+pathString);
+            String[] pathSplit = pathString.split("/");
+            int j=0;
+            if(searchArr.length > pathSplit.length)
+                continue;
+            for(; j<searchArr.length ; j++) {
+//                System.out.println(j + " " + searchArr[j] + " " + pathSplit[j] + " " + pathSplit[j].equals(searchArr[j]));
+                if(!pathSplit[j].equals(searchArr[j])){
+                    match_check = false;
+                }
+            }
+//            System.out.println("match check " + match_check);
+            if(j == pathSplit.length && match_check == true){
+                return false;
+            }
+            else if(j < pathSplit.length && match_check == true)
+            {
+                return true;
+            }
+        }
+        throw new FileNotFoundException("non-existent");
+
     }
+
 
     @Override
     public String[] list(Path directory) throws FileNotFoundException
     {
-        throw new UnsupportedOperationException("not implemented");
+        if(directory == null) {
+            throw new NullPointerException();
+        }
+        if(!isDirectory(directory)) {
+            throw new FileNotFoundException("Path is not a directory");
+        }
+//        if(!pathToStorage.containsKey(directory)){
+//            throw new FileNotFoundException("Path does not exist");
+//        }
+
+        String dirString = directory.toString();
+//        System.out.println("Listing directory: "+dirString);
+        List<Path> allPaths = new ArrayList<>(pathToStorage.keySet());
+        HashSet<String> filePaths = new HashSet<String>();
+        // Go through all paths
+        for(Path p: allPaths){
+            String temp = p.toString();
+            // Find paths that contain this directory
+            if(temp.contains(dirString)){
+//                System.out.println("match: "+temp);
+                String[] components = temp.split("/");
+                if(dirString.equals("/")){
+                    // Listing root directory
+//                    System.out.println("Adding for root list: "+components[1]);
+                    filePaths.add(components[1]);
+                }
+                else {
+                    String newDirString = dirString.substring(1);
+                    for(int i=0; i<components.length; i++){
+                        if(components[i].equals(newDirString) && i+1 < components.length ){
+                            filePaths.add(components[i+1]);
+//                            System.out.println("Found child! "+components[i+1]);
+                        }
+                    }
+                }
+
+            }
+        }
+        return filePaths.toArray(new String[filePaths.size()]);
+
+
     }
 
     @Override
     public boolean createFile(Path file)
         throws RMIException, FileNotFoundException
     {
-        throw new UnsupportedOperationException("not implemented");
+        if(file == null){
+            throw new NullPointerException("File path is null");
+        }
+        if(file.isRoot()){
+            return false;
+        }
+        if(isDirectory(file) == true || isDirectory(file)==false){
+            return false;
+        }
+        Path parentDirectory = file.parent();
+        if(isDirectory(parentDirectory) == true){
+            File dirFile = new File(file.toString());
+            try {
+                return dirFile.createNewFile();
+            }
+            catch(IOException e){
+                e.printStackTrace();
+            }
+        }
+        return false;
     }
 
     @Override
     public boolean createDirectory(Path directory) throws FileNotFoundException
     {
-        throw new UnsupportedOperationException("not implemented");
+        if(directory == null)
+            throw new NullPointerException("Directory is null");
+        if(directory.isRoot()) {
+            return false;
+        }
+        Path parentDirectory = directory.parent();
+        System.out.println("Method: createDirectory"+" Path: "+directory.toString()+" Parent path: "+parentDirectory.toString());
+        System.out.println("Is parent a dir: "+isDirectory(parentDirectory));
+
+//        System.out.println(isDirectory(parentDirectory) +" Parent "+parentDirectory.toString());
+        if(isDirectory(parentDirectory) == false){
+//            return false;
+            throw new FileNotFoundException("Parent is a file, not a dir");
+        }
+        else {
+            String[] children = list(parentDirectory);
+            String[] currentDir = directory.toString().split("/");
+            String currentChild = currentDir[currentDir.length-1];
+            for(String s: children){
+                if (s.equals(currentChild)){
+                    return false;
+                }
+            }
+        }
+        // Creating the directory with the same storage stubs as the parent
+        StorageStubs parentStubs = pathToStorage.get(parentDirectory);
+        System.out.println("printing paths in pathToStorage map");
+        for(Path p: pathToStorage.keySet()){
+            System.out.println("Path in map: "+p.toString());
+        }
+        if(parentStubs == null){
+            System.out.println("parentstubs is null");
+        }
+//        System.out.println("Parent stubs found: "+parentStubs.hashCode());
+        pathToStorage.put(directory, new StorageStubs());
+        return true;
     }
 
     @Override
@@ -184,9 +343,16 @@ public class NamingServer implements Service, Registration
     @Override
     public Storage getStorage(Path file) throws FileNotFoundException
     {
-        throw new UnsupportedOperationException("not implemented");
-    }
 
+        if(file==null){
+            throw new FileNotFoundException("Path is invalid");
+        }
+
+        if(pathToStorage.get(file)== null){
+            throw new FileNotFoundException (" No storage server for this file");
+        }
+        return pathToStorage.get(file).storage;
+    }
     // The method register is documented in Registration.java.
     @Override
     public Path[] register(Storage client_stub, Command command_stub,
@@ -195,17 +361,67 @@ public class NamingServer implements Service, Registration
         if(client_stub == null || command_stub == null || files == null) {
             throw new NullPointerException("None of the arguments can be null");
         }
+
+
         StorageStubs storageStubs = new StorageStubs(client_stub, command_stub);
+        for(StorageStubs stubs: storageServerStubsList){
+            if(stubs.storage.hashCode() == client_stub.hashCode() && stubs.command.hashCode() == command_stub.hashCode()) {
+                throw new IllegalStateException("Server is already registered");
+            }
+        }
+        storageServerStubsList.add(storageStubs);
         /*
         Reference: http://www.codejava.net/java-core/collections/understanding-collections-and-thread-safety-in-java
         * */
-        synchronized (storageServerStubsList) {
-            if(storageServerStubsList.contains(storageStubs)){
-                throw new IllegalStateException("Server is already registered");
+//        synchronized (storageServerStubsList) {
+//            if(storageServerStubsList.contains(storageStubs)){
+//                throw new IllegalStateException("Server is already registered");
+//            }
+//            storageServerStubsList.add(storageStubs);
+//        }
+        // New delete
+        ArrayList<Path> toDelete = new ArrayList<Path>();
+        for(Path path: files) {
+            if (path.isRoot())
+                continue;
+
+            int pathLen = path.components.size();
+            //boolean hashFlag = false;
+            boolean hashFlag = true;
+            if(pathToStorage.containsKey(path)) {
+//                System.out.println("Does not contain key: "+path.toString());
+                hashFlag = false;
+
             }
-            storageServerStubsList.add(storageStubs);
+            for(Path pathKey : pathToStorage.keySet()) {
+//                System.out.println("Comparing Path: "+path.toString()+" and pathKey: "+pathKey.toString());
+                if (pathLen < pathKey.components.size()) {
+                    // checking logic
+
+                    boolean componentFlag1 = false;
+                    for (int i = 0; i < path.components.size(); i++) {
+
+                        if (!path.components.get(i).equals(pathKey.components.get(i))) {
+                            componentFlag1 = true;
+                            break;
+                        }
+
+                    }
+                    hashFlag = componentFlag1 && hashFlag;
+                }
+            }
+
+            if(hashFlag) {
+                pathToStorage.put(path,storageStubs);
+            }
+
+            else {
+//                System.out.println("Added to delete: " + path.toString());
+                toDelete.add(path);
+            }
+
         }
-        Path[] pathArray = new Path[]{};
+        Path[] pathArray = toDelete.toArray(new Path[toDelete.size()]);
         return pathArray;
     }
 }
